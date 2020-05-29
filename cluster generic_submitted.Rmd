@@ -1,0 +1,782 @@
+```{r}
+#install.packages("kmlShape")
+library(kmlShape)
+```
+
+```{r}
+data=read.csv("FirstHourVarT.csv")
+head(data, 10)
+#groundtruth=rep(1:2, each=9)
+```
+```{r}
+# str(data)
+```
+
+```{r}
+set.seed(1)
+myClds <- cldsWide(data)
+# str(myClds)
+```
+
+```{r}
+plotTraj(myClds)
+plotSenators(myClds)
+```
+```{r}
+#reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+#reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+```
+
+```{r}
+
+(kml.complete = kmlShape(myClds,2, toPlot="none"))
+# str(kml.complete)
+# str(myClds)
+kml.dat = data.frame(
+  # "cluster" = kml.complete@clusters,
+  "icentre" = kml.complete@trajMeans$iCenters, 
+  "times" = kml.complete@trajMeans$times, 
+  "traj" = kml.complete@trajMeans$traj
+)
+
+``` 
+
+
+
+```{r}
+
+df = data.frame(myClds@trajWide)
+df$clusters = myClds@clusters
+
+str(df)
+```
+
+```{r}
+kml.shrunk = subset(kml.dat, kml.dat$icentre == 1)
+
+df.shrunk = subset(df, df$clusters == 1)
+
+df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+df.traj = as.vector(df.shrunk[1,1:ncol(df.shrunk)-1])
+
+
+(freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                          df.times, df.traj, 
+                          timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+freshyfresh$cluster = 1
+freshyfresh$clustercount = 2
+```
+
+
+
+```{r} 
+
+
+# write.csv(myClds,'cld.csv')
+```
+
+
+
+
+### Into loops
+
+
+
+```{r}
+
+#install.packages("kmlShape")
+library(kmlShape)
+require(psych)
+require(plyr)
+library(dplyr)
+library(tidyr)
+
+
+
+
+rm(frechetdistances)
+rm(desc)
+rm(desctrials)
+
+
+temp.frechet = data.frame(
+  "times", "traj", "cluster", "clustercount", "iteration", "file"
+)
+
+files = c("FirstHourMeanT")#, "FirstHourVarT", "FirstHourMaxT", "FirstHourMinT", "FirstHourIqrT")
+# files = c("FirsthourMean")#, "First hour Max", "", "First hour Min", "First hour var")# List all file names
+# files = "First hour iqr"
+
+clusters2try = c(1:10)
+
+for (file in files) {
+  
+  data=read.csv(paste(file, ".csv", sep = ""))
+  # data=read.csv(paste(files, ".csv", sep = ""))
+
+  # head(data, 10)
+  #groundtruth=rep(1:2, each=9)
+  
+  set.seed(1)
+  myClds <- cldsWide(data)
+  # str(myClds)
+  
+  # plotTraj(myClds)
+  # plotSenators(myClds)
+  #reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+  #reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+  
+  for (i.totalclusters in clusters2try){
+    
+    kml.complete = kmlShape(myClds,i.totalclusters, toPlot="none")
+    # str(kml.complete)
+    # str(myClds)
+    kml.dat = data.frame(
+      "icentre" = kml.complete@trajMeans$iCenters, 
+      "times" = kml.complete@trajMeans$times, 
+      "traj" = kml.complete@trajMeans$traj
+    )
+    
+    df = data.frame(myClds@trajWide) #raw data from the csv
+    df$clusters = myClds@clusters #add in the clusters, make a nice stew
+    
+    png(paste(file, " image--",i.totalclusters, "plot", '.png'))
+    plot(myClds)
+    dev.off()
+    
+    png(paste(file, " image--",i.totalclusters, "Trajplot", '.png'))
+    plotTraj(myClds)
+    dev.off()
+
+    
+    # str(df)
+      for (ii.eachcluster in 1:i.totalclusters){
+        kml.shrunk = subset(kml.dat, kml.dat$icentre == ii.eachcluster)
+    
+        df.shrunk = subset(df, df$clusters == ii.eachcluster)
+        
+        for(iii.eachpt in 1:nrow(df.shrunk)){
+          df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+          df.traj = as.vector(df.shrunk[iii.eachpt, 1:ncol(df.shrunk)-1])
+          
+          
+          (freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                                    df.times, df.traj, 
+                                    timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+          
+          
+          
+          
+          iteration = paste(i.totalclusters, ii.eachcluster, sep = "-")
+          temp.frechet = data.frame(
+                        "times"= freshyfresh$times, 
+                        "traj" = freshyfresh$traj, 
+                        "cluster" = ii.eachcluster, 
+                        "clustercount" = i.totalclusters, 
+                        "iteration" = iteration, 
+                        "file" = file
+                        )
+          temp.frechet = spread(temp.frechet, times, traj)
+          # #print(ncol(temp.frechet))
+          
+          if (exists("frechetdistances")) {
+            frechetdistances = rbind.fill(frechetdistances, temp.frechet)
+            
+          } else { frechetdistances = temp.frechet
+          }
+          
+        }
+         
+        names(frechetdistances) = NULL
+        fresh.mat = as.vector(as.numeric(unlist(frechetdistances[c(1:nrow(frechetdistances)), c(5:ncol(frechetdistances))])))
+        
+        desc = data.frame(
+          "mean" = mean(fresh.mat, na.rm = TRUE), 
+          "sd" = sd(fresh.mat, na.rm = TRUE)
+        )
+        
+        rownames(desc) = iteration
+        
+        
+        if (exists("desctrials")) {
+          desctrials = rbind(desctrials, desc)
+
+        } else { desctrials = desc }
+        
+        
+        
+        print(paste("Iteration complete:", iteration," @ ", Sys.time(), file))
+      }
+    
+    
+  }
+  
+}
+
+
+# 
+# 
+# write.csv(frechetdistances, paste('frechetdistances', file, '.csv'))
+write.csv(desctrials,paste('desctrials', file, '.csv'))
+
+```
+
+
+```{r}
+
+#install.packages("kmlShape")
+library(kmlShape)
+require(psych)
+
+
+
+
+rm(frechetdistances)
+rm(desc)
+rm(desctrials)
+
+temp.frechet = data.frame(
+  "times", "traj", "cluster", "clustercount", "iteration", "file"
+)
+
+files = c("FirstHourVarT")#, "FirstHourMaxT", "FirstHourMinT", "FirstHourIqrT")
+# files = c("First hour iqr")#, "First hour Max", "First hour Mean", "First hour Min", "First hour var")# List all file names
+# files = "First hour iqr"
+
+clusters2try = c(1:10)
+
+for (file in files) {
+  
+  data=read.csv(paste(file, ".csv", sep = ""))
+  # data=read.csv(paste(files, ".csv", sep = ""))
+
+  # head(data, 10)
+  #groundtruth=rep(1:2, each=9)
+  
+  set.seed(1)
+  myClds <- cldsWide(data)
+  # str(myClds)
+  
+  # plotTraj(myClds)
+  # plotSenators(myClds)
+  #reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+  #reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+  
+  for (i.totalclusters in clusters2try){
+    
+    kml.complete = kmlShape(myClds,i.totalclusters, toPlot="none")
+    # str(kml.complete)
+    # str(myClds)
+    kml.dat = data.frame(
+      "icentre" = kml.complete@trajMeans$iCenters, 
+      "times" = kml.complete@trajMeans$times, 
+      "traj" = kml.complete@trajMeans$traj
+    )
+    
+    df = data.frame(myClds@trajWide) #raw data from the csv
+    df$clusters = myClds@clusters #add in the clusters, make a nice stew
+    
+    png(paste(file, " image--",i.totalclusters, "plot", '.png'))
+    plot(myClds)
+    dev.off()
+    
+    png(paste(file, " image--",i.totalclusters, "Trajplot", '.png'))
+    plotTraj(myClds)
+    dev.off()
+
+    
+    # str(df)
+      for (ii.eachcluster in 1:i.totalclusters){
+        kml.shrunk = subset(kml.dat, kml.dat$icentre == ii.eachcluster)
+    
+        df.shrunk = subset(df, df$clusters == ii.eachcluster)
+        
+        for(iii.eachpt in 1:nrow(df.shrunk)){
+          df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+          df.traj = as.vector(df.shrunk[iii.eachpt, 1:ncol(df.shrunk)-1])
+          
+          
+          (freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                                    df.times, df.traj, 
+                                    timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+          
+          
+          
+          
+          iteration = paste(i.totalclusters, ii.eachcluster, sep = "-")
+          temp.frechet = data.frame(
+                        "times"= freshyfresh$times, 
+                        "traj" = freshyfresh$traj, 
+                        "cluster" = ii.eachcluster, 
+                        "clustercount" = i.totalclusters, 
+                        "iteration" = iteration, 
+                        "file" = file
+                        )
+          temp.frechet = spread(temp.frechet, times, traj)
+          # #print(ncol(temp.frechet))
+          
+          if (exists("frechetdistances")) {
+            frechetdistances = rbind.fill(frechetdistances, temp.frechet)
+            
+          } else { frechetdistances = temp.frechet
+          }
+          
+        }
+         
+        names(frechetdistances) = NULL
+        fresh.mat = as.vector(as.numeric(unlist(frechetdistances[c(1:nrow(frechetdistances)), c(5:ncol(frechetdistances))])))
+        
+        desc = data.frame(
+          "mean" = mean(fresh.mat, na.rm = TRUE), 
+          "sd" = sd(fresh.mat, na.rm = TRUE)
+        )
+        
+        rownames(desc) = iteration
+        
+        
+        if (exists("desctrials")) {
+          desctrials = rbind(desctrials, desc)
+
+        } else { desctrials = desc }
+        
+        
+        
+        print(paste("Iteration complete:", iteration," @ ", Sys.time(), file))
+      }
+    
+    
+  }
+  
+}
+
+
+# 
+# 
+# write.csv(frechetdistances, paste('frechetdistances', file, '.csv'))
+write.csv(desctrials,paste('desctrials', file, '.csv'))
+
+```
+
+
+
+
+
+```{r}
+
+#install.packages("kmlShape")
+library(kmlShape)
+require(psych)
+
+
+
+
+rm(frechetdistances)
+rm(desc)
+rm(desctrials)
+
+
+temp.frechet = data.frame(
+  "times", "traj", "cluster", "clustercount", "iteration", "file"
+)
+
+files = c("FirstHourMinT")#, "FirstHourIqrT")
+# files = c("First hour iqr")#, "First hour Max", "First hour Mean", "First hour Min", "First hour var")# List all file names
+# files = "First hour iqr"
+
+clusters2try = c(1:10)
+
+for (file in files) {
+  
+  data=read.csv(paste(file, ".csv", sep = ""))
+  # data=read.csv(paste(files, ".csv", sep = ""))
+
+  # head(data, 10)
+  #groundtruth=rep(1:2, each=9)
+  
+  set.seed(1)
+  myClds <- cldsWide(data)
+  # str(myClds)
+  
+  # plotTraj(myClds)
+  # plotSenators(myClds)
+  #reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+  #reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+  
+  for (i.totalclusters in clusters2try){
+    
+    kml.complete = kmlShape(myClds,i.totalclusters, toPlot="none")
+    # str(kml.complete)
+    # str(myClds)
+    kml.dat = data.frame(
+      "icentre" = kml.complete@trajMeans$iCenters, 
+      "times" = kml.complete@trajMeans$times, 
+      "traj" = kml.complete@trajMeans$traj
+    )
+    
+    df = data.frame(myClds@trajWide) #raw data from the csv
+    df$clusters = myClds@clusters #add in the clusters, make a nice stew
+    
+    png(paste(file, " image--",i.totalclusters, "plot", '.png'))
+    plot(myClds)
+    dev.off()
+    
+    png(paste(file, " image--",i.totalclusters, "Trajplot", '.png'))
+    plotTraj(myClds)
+    dev.off()
+
+    
+    # str(df)
+      for (ii.eachcluster in 1:i.totalclusters){
+        kml.shrunk = subset(kml.dat, kml.dat$icentre == ii.eachcluster)
+    
+        df.shrunk = subset(df, df$clusters == ii.eachcluster)
+        
+        for(iii.eachpt in 1:nrow(df.shrunk)){
+          df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+          df.traj = as.vector(df.shrunk[iii.eachpt, 1:ncol(df.shrunk)-1])
+          
+          
+          (freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                                    df.times, df.traj, 
+                                    timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+          
+          
+          
+          
+          iteration = paste(i.totalclusters, ii.eachcluster, sep = "-")
+          temp.frechet = data.frame(
+                        "times"= freshyfresh$times, 
+                        "traj" = freshyfresh$traj, 
+                        "cluster" = ii.eachcluster, 
+                        "clustercount" = i.totalclusters, 
+                        "iteration" = iteration, 
+                        "file" = file
+                        )
+          temp.frechet = spread(temp.frechet, times, traj)
+          # #print(ncol(temp.frechet))
+          
+          if (exists("frechetdistances")) {
+            frechetdistances = rbind.fill(frechetdistances, temp.frechet)
+            
+          } else { frechetdistances = temp.frechet
+          }
+          
+        }
+         
+        names(frechetdistances) = NULL
+        fresh.mat = as.vector(as.numeric(unlist(frechetdistances[c(1:nrow(frechetdistances)), c(5:ncol(frechetdistances))])))
+        
+        desc = data.frame(
+          "mean" = mean(fresh.mat, na.rm = TRUE), 
+          "sd" = sd(fresh.mat, na.rm = TRUE)
+        )
+        
+        rownames(desc) = iteration
+        
+        
+        if (exists("desctrials")) {
+          desctrials = rbind(desctrials, desc)
+
+        } else { desctrials = desc }
+        
+        
+        
+        print(paste("Iteration complete:", iteration," @ ", Sys.time(), file))
+      }
+    
+    
+  }
+  
+}
+
+
+# 
+# 
+# write.csv(frechetdistances, paste('frechetdistances', file, '.csv'))
+write.csv(desctrials,paste('desctrials', file, '.csv'))
+```
+
+
+
+
+
+```{r}
+
+#install.packages("kmlShape")
+library(kmlShape)
+require(psych)
+
+
+
+rm(frechetdistances)
+rm(desc)
+rm(desctrials)
+
+
+temp.frechet = data.frame(
+  "times", "traj", "cluster", "clustercount", "iteration", "file"
+)
+
+files = c("FirstHourIqrT")
+# files = c("First hour iqr")#, "First hour Max", "First hour Mean", "First hour Min", "First hour var")# List all file names
+# files = "First hour iqr"
+
+clusters2try = c(1:10)
+
+for (file in files) {
+  
+  data=read.csv(paste(file, ".csv", sep = ""))
+  # data=read.csv(paste(files, ".csv", sep = ""))
+
+  # head(data, 10)
+  #groundtruth=rep(1:2, each=9)
+  
+  set.seed(1)
+  myClds <- cldsWide(data)
+  # str(myClds)
+  
+  # plotTraj(myClds)
+  # plotSenators(myClds)
+  #reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+  #reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+  
+  for (i.totalclusters in clusters2try){
+    
+    kml.complete = kmlShape(myClds,i.totalclusters, toPlot="none")
+    # str(kml.complete)
+    # str(myClds)
+    kml.dat = data.frame(
+      "icentre" = kml.complete@trajMeans$iCenters, 
+      "times" = kml.complete@trajMeans$times, 
+      "traj" = kml.complete@trajMeans$traj
+    )
+    
+    df = data.frame(myClds@trajWide) #raw data from the csv
+    df$clusters = myClds@clusters #add in the clusters, make a nice stew
+    
+    png(paste(file, " image--",i.totalclusters, "plot", '.png'))
+    plot(myClds)
+    dev.off()
+    
+    png(paste(file, " image--",i.totalclusters, "Trajplot", '.png'))
+    plotTraj(myClds)
+    dev.off()
+
+    
+    # str(df)
+      for (ii.eachcluster in 1:i.totalclusters){
+        kml.shrunk = subset(kml.dat, kml.dat$icentre == ii.eachcluster)
+    
+        df.shrunk = subset(df, df$clusters == ii.eachcluster)
+        
+        for(iii.eachpt in 1:nrow(df.shrunk)){
+          df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+          df.traj = as.vector(df.shrunk[iii.eachpt, 1:ncol(df.shrunk)-1])
+          
+          
+          (freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                                    df.times, df.traj, 
+                                    timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+          
+          
+          
+          
+          iteration = paste(i.totalclusters, ii.eachcluster, sep = "-")
+          temp.frechet = data.frame(
+                        "times"= freshyfresh$times, 
+                        "traj" = freshyfresh$traj, 
+                        "cluster" = ii.eachcluster, 
+                        "clustercount" = i.totalclusters, 
+                        "iteration" = iteration, 
+                        "file" = file
+                        )
+          temp.frechet = spread(temp.frechet, times, traj)
+          # #print(ncol(temp.frechet))
+          
+          if (exists("frechetdistances")) {
+            frechetdistances = rbind.fill(frechetdistances, temp.frechet)
+            
+          } else { frechetdistances = temp.frechet
+          }
+          
+        }
+         
+        names(frechetdistances) = NULL
+        fresh.mat = as.vector(as.numeric(unlist(frechetdistances[c(1:nrow(frechetdistances)), c(5:ncol(frechetdistances))])))
+        
+        desc = data.frame(
+          "mean" = mean(fresh.mat, na.rm = TRUE), 
+          "sd" = sd(fresh.mat, na.rm = TRUE)
+        )
+        
+        rownames(desc) = iteration
+        
+        
+        if (exists("desctrials")) {
+          desctrials = rbind(desctrials, desc)
+
+        } else { desctrials = desc }
+        
+        
+        
+        print(paste("Iteration complete:", iteration," @ ", Sys.time(), file))
+      }
+    
+    
+  }
+  
+}
+
+
+# 
+# 
+# write.csv(frechetdistances, paste('frechetdistances', file, '.csv'))
+write.csv(desctrials,paste('desctrials', file, '.csv'))
+
+```
+
+
+
+
+```{r}
+# 
+#install.packages("kmlShape")
+library(kmlShape)
+require(psych)
+
+
+
+
+rm(frechetdistances)
+rm(desc)
+rm(desctrials)
+
+
+temp.frechet = data.frame(
+  "times", "traj", "cluster", "clustercount", "iteration", "file"
+)
+
+# files = c("First hour Max")#, "FirstHourMinT", "FirstHourIqrT")
+files = c("FirstHourMaxT2")#, "First hour Max", "First hour Mean", "First hour Min", "First hour var")# List all file names
+# files = "First hour iqr"
+
+clusters2try = c(1:10)
+
+for (file in files) {
+  
+  data=read.csv(paste(file, ".csv", sep = ""))
+  # data=read.csv(paste(files, ".csv", sep = ""))
+
+  # head(data, 10)
+  #groundtruth=rep(1:2, each=9)
+  
+  set.seed(1)
+  myClds <- cldsWide(data)
+  # str(myClds)
+  
+  # plotTraj(myClds)
+  # plotSenators(myClds)
+  #reduceTraj(myClds,nbTimes=25) #combine to only 25 timepoints
+  #reduceTraj(myClds,nbSenators=50) #pre-cluster individual runs?
+  
+  for (i.totalclusters in clusters2try){
+    
+    kml.complete = kmlShape(myClds,i.totalclusters, toPlot="none")
+    # str(kml.complete)
+    # str(myClds)
+    kml.dat = data.frame(
+      "icentre" = kml.complete@trajMeans$iCenters, 
+      "times" = kml.complete@trajMeans$times, 
+      "traj" = kml.complete@trajMeans$traj
+    )
+    
+    df = data.frame(myClds@trajWide) #raw data from the csv
+    df$clusters = myClds@clusters #add in the clusters, make a nice stew
+    
+    png(paste(file, " image--",i.totalclusters, "plot", '.png'))
+    plot(myClds)
+    dev.off()
+    
+    png(paste(file, " image--",i.totalclusters, "Trajplot", '.png'))
+    plotTraj(myClds)
+    dev.off()
+
+    
+    # str(df)
+      for (ii.eachcluster in 1:i.totalclusters){
+        kml.shrunk = subset(kml.dat, kml.dat$icentre == ii.eachcluster)
+    
+        df.shrunk = subset(df, df$clusters == ii.eachcluster)
+        
+        for(iii.eachpt in 1:nrow(df.shrunk)){
+          df.times = as.vector(as.numeric(sub("X", "", names(df)[1:14])))
+          df.traj = as.vector(df.shrunk[iii.eachpt, 1:ncol(df.shrunk)-1])
+          
+          
+          (freshyfresh = meanFrechet2( kml.shrunk$times, kml.shrunk$traj,
+                                    df.times, df.traj, 
+                                    timeScale = 0.1, FrechetSumOrMax = "sum", weightPQ = c(1,1)))
+
+          
+          
+          
+          
+          iteration = paste(i.totalclusters, ii.eachcluster, sep = "-")
+          temp.frechet = data.frame(
+                        "times"= freshyfresh$times, 
+                        "traj" = freshyfresh$traj, 
+                        "cluster" = ii.eachcluster, 
+                        "clustercount" = i.totalclusters, 
+                        "iteration" = iteration, 
+                        "file" = file
+                        )
+          temp.frechet = spread(temp.frechet, times, traj)
+          # #print(ncol(temp.frechet))
+          
+          if (exists("frechetdistances")) {
+            frechetdistances = rbind.fill(frechetdistances, temp.frechet)
+            
+          } else { frechetdistances = temp.frechet
+          }
+          
+        }
+         
+        names(frechetdistances) = NULL
+        fresh.mat = as.vector(as.numeric(unlist(frechetdistances[c(1:nrow(frechetdistances)), c(5:ncol(frechetdistances))])))
+        
+        desc = data.frame(
+          "mean" = mean(fresh.mat, na.rm = TRUE), 
+          "sd" = sd(fresh.mat, na.rm = TRUE)
+        )
+        
+        rownames(desc) = iteration
+        
+        
+        if (exists("desctrials")) {
+          desctrials = rbind(desctrials, desc)
+
+        } else { desctrials = desc }
+        
+        
+        
+        print(paste("Iteration complete:", iteration," @ ", Sys.time(), file))
+      }
+    
+    
+  }
+  
+}
+
+
+# 
+# 
+# write.csv(frechetdistances, paste('frechetdistances', file, '.csv'))
+write.csv(desctrials,paste('desctrials', file, '.csv'))
+
+
+```
